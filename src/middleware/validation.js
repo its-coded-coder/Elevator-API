@@ -210,8 +210,8 @@ const schemas = {
       .optional()
   }),
 
-  // Elevator logs query schema
-  elevatorLogsQuery: Joi.object({
+  // Elevator logs query schema (base)
+  elevatorLogsQueryBase: Joi.object({
     elevatorId: Joi.string()
       .uuid()
       .optional(),
@@ -231,7 +231,7 @@ const schemas = {
     userId: Joi.string()
       .uuid()
       .optional()
-  }).concat(schemas.paginationQuery).concat(schemas.dateRangeQuery),
+  }),
 
   // WebSocket subscription schema
   wsSubscription: Joi.object({
@@ -274,8 +274,8 @@ const schemas = {
       .optional()
   }),
 
-  // Analytics query schema
-  analyticsQuery: Joi.object({
+  // Analytics query schema (base)
+  analyticsQueryBase: Joi.object({
     metric: Joi.string()
       .valid('usage', 'performance', 'errors', 'efficiency')
       .required(),
@@ -289,7 +289,7 @@ const schemas = {
     groupBy: Joi.string()
       .valid('elevator', 'floor', 'eventType', 'user')
       .optional()
-  }).concat(schemas.dateRangeQuery),
+  }),
 
   // Change password schema
   changePassword: Joi.object({
@@ -313,6 +313,14 @@ const schemas = {
       })
   })
 };
+
+// Create composite schemas after base schemas are defined
+schemas.elevatorLogsQuery = schemas.elevatorLogsQueryBase
+  .concat(schemas.paginationQuery)
+  .concat(schemas.dateRangeQuery);
+
+schemas.analyticsQuery = schemas.analyticsQueryBase
+  .concat(schemas.dateRangeQuery);
 
 // Validation middleware factory
 const validate = (schemaName, source = 'body') => {

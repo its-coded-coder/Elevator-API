@@ -30,6 +30,10 @@ class ElevatorServer {
       await elevatorService.initialize();
       loggingService.logger.info('Elevator service initialized');
 
+      // Now enable SQL logging after everything is initialized
+      loggingService.enableSQLLogging();
+      loggingService.logger.info('SQL logging enabled after initialization');
+
       // Setup Express middleware
       this.setupMiddleware();
 
@@ -297,7 +301,7 @@ class ElevatorServer {
       await this.initialize();
 
       this.server = this.app.listen(config.server.port, () => {
-        loggingService.logger.info('🚀 Elevator Management API Server started', {
+        loggingService.logger.info('Elevator Management API Server started', {
           port: config.server.port,
           environment: config.server.nodeEnv,
           timezone: config.server.timezone,

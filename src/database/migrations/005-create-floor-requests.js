@@ -92,15 +92,6 @@ module.exports = {
     await queryInterface.addIndex('floor_requests', ['priority']);
     await queryInterface.addIndex('floor_requests', ['floor', 'status']);
     await queryInterface.addIndex('floor_requests', ['elevator_id', 'status']);
-
-    // Create partial unique index for active requests
-    await queryInterface.addIndex('floor_requests', ['floor', 'direction'], {
-      unique: true,
-      where: {
-        status: ['PENDING', 'ASSIGNED', 'IN_PROGRESS']
-      },
-      name: 'unique_active_floor_direction'
-    });
   },
 
   async down(queryInterface, Sequelize) {

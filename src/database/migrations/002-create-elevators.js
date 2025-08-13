@@ -74,8 +74,9 @@ module.exports = {
       }
     });
 
-    // Create indexes
-    await queryInterface.addIndex('elevators', ['elevator_number'], { unique: true });
+    // Note: Unique index for elevator_number is automatically created 
+    // by the UNIQUE constraint in the table definition above
+    // Add non-unique indexes only
     await queryInterface.addIndex('elevators', ['current_floor']);
     await queryInterface.addIndex('elevators', ['state']);
     await queryInterface.addIndex('elevators', ['direction']);

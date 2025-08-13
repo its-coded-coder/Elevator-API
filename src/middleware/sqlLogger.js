@@ -6,6 +6,7 @@ class SQLLogger {
   constructor() {
     this.isEnabled = true;
     this.originalQuery = null;
+    this.isLogging = false; // Prevent circular logging
     this.setup();
   }
 
@@ -19,7 +20,7 @@ class SQLLogger {
   }
 
   async interceptQuery(sql, options = {}) {
-    if (!this.isEnabled) {
+    if (!this.isEnabled || this.isLogging) {
       return this.originalQuery(sql, options);
     }
 
@@ -48,7 +49,7 @@ class SQLLogger {
     } finally {
       const executionTime = Date.now() - startTime;
       
-      // Log the query asynchronously
+      // Log the query asynchronously (but prevent infinite loops)
       this.logQuery({
         query: sql,
         options,
@@ -57,11 +58,8 @@ class SQLLogger {
         error,
         requestId
       }).catch(logErr => {
-        // Don't throw on logging errors, just log them
-        loggingService.logger.error('Failed to log SQL query', {
-          error: logErr.message,
-          originalQuery: sql?.substring(0, 200)
-        });
+        // Don't throw on logging errors, just log them to console
+        console.error('Failed to log SQL query:', logErr.message);
       });
     }
 
@@ -79,6 +77,10 @@ class SQLLogger {
       if (typeof qi[method] === 'function') {
         const original = qi[method].bind(qi);
         qi[method] = async (...args) => {
+          if (this.isLogging) {
+            return original(...args);
+          }
+
           const requestId = uuidv4();
           const startTime = Date.now();
           let result;
@@ -93,11 +95,22 @@ class SQLLogger {
             const executionTime = Date.now() - startTime;
             
             // Create a descriptive query for QueryInterface operations
-            const queryDescription = `QueryInterface.${method}(${JSON.stringify(args[0] || {}).substring(0, 100)})`;
+            let queryDescription = `QueryInterface.${method}()`;
+            try {
+              if (args && args.length > 0 && args[0]) {
+                if (typeof args[0] === 'string') {
+                  queryDescription = `QueryInterface.${method}(${args[0].substring(0, 50)})`;
+                } else {
+                  queryDescription = `QueryInterface.${method}(${Object.keys(args[0]).join(', ')})`;
+                }
+              }
+            } catch (descError) {
+              // Use default description if creation fails
+            }
             
             this.logQuery({
               query: queryDescription,
-              options: { method, args },
+              options: { method, argCount: args ? args.length : 0 },
               executionTime,
               rowsAffected: 0,
               error,
@@ -114,16 +127,36 @@ class SQLLogger {
   }
 
   async logQuery(queryInfo) {
+    // Prevent infinite loops by checking if we're already logging
+    if (this.isLogging) {
+      return;
+    }
+
     try {
       const { query, options, executionTime, rowsAffected, error, requestId } = queryInfo;
       
+      // Extract table name to prevent logging our own queries
+      const tableName = this.extractTableName(query);
+      if (tableName === 'query_logs') {
+        return; // Don't log queries to the query_logs table
+      }
+
+      // Check if SQL logging is enabled from the logging service
+      const loggingService = require('../services/loggingService');
+      if (!loggingService.sqlLoggingEnabled) {
+        return; // Don't log if SQL logging is disabled
+      }
+
+      // Set logging flag to prevent infinite recursion
+      this.isLogging = true;
+
       // Extract context from options or current request
       const context = this.extractContext(options);
       
       const logData = {
         query: this.sanitizeQuery(query),
         queryType: this.extractQueryType(query),
-        tableName: this.extractTableName(query),
+        tableName,
         executionTime,
         rowsAffected,
         requestId,
@@ -139,10 +172,10 @@ class SQLLogger {
 
     } catch (logError) {
       // Don't let logging errors interfere with the main operation
-      loggingService.logger.error('SQL logging failed', {
-        error: logError.message,
-        originalQuery: queryInfo.query?.substring(0, 100)
-      });
+      console.error('SQL logging failed:', logError.message);
+    } finally {
+      // Always reset the logging flag
+      this.isLogging = false;
     }
   }
 
@@ -180,7 +213,8 @@ class SQLLogger {
   }
 
   sanitizeQuery(query) {
-    if (!query || typeof query !== 'string') return query;
+    if (!query) return 'Unknown query';
+    if (typeof query !== 'string') return String(query);
     
     // Remove sensitive data patterns
     return query
@@ -192,7 +226,8 @@ class SQLLogger {
   }
 
   extractQueryType(query) {
-    if (!query || typeof query !== 'string') return 'OTHER';
+    if (!query) return 'OTHER';
+    if (typeof query !== 'string') return 'OTHER';
     
     const cleanQuery = query.trim().toUpperCase();
     
@@ -209,7 +244,8 @@ class SQLLogger {
   }
 
   extractTableName(query) {
-    if (!query || typeof query !== 'string') return null;
+    if (!query) return null;
+    if (typeof query !== 'string') return null;
     
     const cleanQuery = query.trim().replace(/\s+/g, ' ').toUpperCase();
     
@@ -298,7 +334,8 @@ class SQLLogger {
   getStats() {
     return {
       enabled: this.isEnabled,
-      interceptorActive: sequelize.query !== this.originalQuery
+      interceptorActive: sequelize.query !== this.originalQuery,
+      isLogging: this.isLogging
     };
   }
 
@@ -308,6 +345,7 @@ class SQLLogger {
       sequelize.query = this.originalQuery;
     }
     this.isEnabled = false;
+    this.isLogging = false;
     loggingService.logger.info('SQL logging restored to original state');
   }
 }

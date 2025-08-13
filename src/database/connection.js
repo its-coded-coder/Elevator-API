@@ -145,7 +145,7 @@ class DatabaseManager {
   static async testConnection() {
     try {
       await sequelize.authenticate();
-      const [results] = await sequelize.query('SELECT NOW() as current_time');
+      const [results] = await sequelize.query("SELECT NOW() AS `current_time`");
       dbLogger.info('Database connection test successful', { 
         current_time: results[0].current_time 
       });
