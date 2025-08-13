@@ -1,7 +1,7 @@
 {
   "name": "elevator-management-api",
   "version": "1.0.0",
-  "description": "Real-time elevator management system with comprehensive logging and analytics",
+  "description": "Real-time elevator management system",
   "main": "server.js",
   "keywords": ["elevator", "management", "api", "real-time", "websocket", "scheduling"],
   "author": "Elevator Management Team",
@@ -27,7 +27,7 @@
     "db:test": "node src/database/setup.js test",
     "db:create": "node src/database/setup.js create",
     "logs:cleanup": "node -e \"require('./src/services/loggingService').cleanupOldLogs(30)\"",
-    "system:status": "curl -s http://localhost:3000/api/system/status | json_pp || curl -s http://localhost:3000/api/system/status",
+    "system:status": "curl -s http://localhost:4000/api/system/status | json_pp || curl -s http://localhost:4000/api/system/status",
     "validate": "npm run lint && npm run test",
     "setup": "npm install && npm run db:setup",
     "production": "NODE_ENV=production npm start"

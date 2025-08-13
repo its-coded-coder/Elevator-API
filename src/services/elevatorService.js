@@ -26,6 +26,8 @@ class ElevatorService {
         order: [['elevatorNumber', 'ASC']]
       });
 
+      loggingService.logger.info(`Found ${elevators.length} elevators to initialize`);
+
       // Initialize each elevator
       for (const elevator of elevators) {
         await this.initializeElevator(elevator);
@@ -38,38 +40,50 @@ class ElevatorService {
       loggingService.logger.info(`Elevator Service initialized with ${elevators.length} elevators`);
 
     } catch (error) {
-      loggingService.logger.error('Failed to initialize Elevator Service', { error: error.message });
+      loggingService.logger.error('Failed to initialize Elevator Service', { 
+        error: error.message,
+        stack: error.stack 
+      });
       throw error;
     }
   }
 
   // Initialize a single elevator
   async initializeElevator(elevator) {
-    const elevatorInstance = {
-      id: elevator.id,
-      number: elevator.elevatorNumber,
-      currentFloor: elevator.currentFloor,
-      targetFloor: elevator.targetFloor,
-      state: elevator.state,
-      direction: elevator.direction,
-      doorState: elevator.doorState,
-      isActive: elevator.isActive,
-      queue: [], // Request queue
-      lastUpdate: new Date(),
-      isMoving: false
-    };
+    try {
+      const elevatorInstance = {
+        id: elevator.id,
+        number: elevator.elevatorNumber,
+        currentFloor: elevator.currentFloor,
+        targetFloor: elevator.targetFloor,
+        state: elevator.state,
+        direction: elevator.direction,
+        doorState: elevator.doorState,
+        isActive: elevator.isActive,
+        queue: [], // Request queue
+        lastUpdate: new Date(),
+        isMoving: false
+      };
 
-    this.activeElevators.set(elevator.id, elevatorInstance);
-    
-    loggingService.logger.info('Elevator initialized', {
-      elevatorId: elevator.id,
-      elevatorNumber: elevator.elevatorNumber,
-      currentFloor: elevator.currentFloor,
-      state: elevator.state
-    });
+      this.activeElevators.set(elevator.id, elevatorInstance);
+      
+      loggingService.logger.info('Elevator initialized', {
+        elevatorId: elevator.id,
+        elevatorNumber: elevator.elevatorNumber,
+        currentFloor: elevator.currentFloor,
+        state: elevator.state
+      });
 
-    // Broadcast initial status
-    this.broadcastElevatorUpdate(elevatorInstance);
+      // Broadcast initial status
+      this.broadcastElevatorUpdate(elevatorInstance);
+    } catch (error) {
+      loggingService.logger.error('Failed to initialize elevator', {
+        elevatorId: elevator?.id,
+        error: error.message,
+        stack: error.stack
+      });
+      throw error;
+    }
   }
 
   // Main service loop
@@ -569,20 +583,31 @@ class ElevatorService {
 
   // Broadcast elevator update via WebSocket
   broadcastElevatorUpdate(elevator) {
-    const updateData = {
-      elevatorId: elevator.id,
-      elevatorNumber: elevator.number,
-      currentFloor: elevator.currentFloor,
-      targetFloor: elevator.targetFloor,
-      state: elevator.state,
-      direction: elevator.direction,
-      doorState: elevator.doorState,
-      queueLength: elevator.queue.length,
-      isActive: elevator.isActive,
-      lastUpdate: elevator.lastUpdate
-    };
+    try {
+      const updateData = {
+        elevatorId: elevator.id,
+        elevatorNumber: elevator.number,
+        currentFloor: elevator.currentFloor,
+        targetFloor: elevator.targetFloor,
+        state: elevator.state,
+        direction: elevator.direction,
+        doorState: elevator.doorState,
+        queueLength: elevator.queue.length,
+        isActive: elevator.isActive,
+        lastUpdate: elevator.lastUpdate
+      };
 
-    websocketService.broadcastElevatorUpdate(updateData);
+      // Only broadcast if websocket service is available
+      if (websocketService && websocketService.isStarted) {
+        websocketService.broadcastElevatorUpdate(updateData);
+      }
+    } catch (error) {
+      loggingService.logger.error('Failed to broadcast elevator update', {
+        elevatorId: elevator?.id,
+        error: error.message
+      });
+      // Don't throw the error, just log it
+    }
   }
 
   // Emergency stop elevator

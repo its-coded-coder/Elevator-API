@@ -53,9 +53,9 @@ module.exports = {
       }
     });
 
-    // Create indexes
-    await queryInterface.addIndex('users', ['username'], { unique: true });
-    await queryInterface.addIndex('users', ['email'], { unique: true });
+    // Note: Unique indexes for username and email are automatically created 
+    // by the UNIQUE constraints in the table definition above
+    // Add non-unique indexes only
     await queryInterface.addIndex('users', ['role']);
     await queryInterface.addIndex('users', ['is_active']);
   },

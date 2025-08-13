@@ -1,6 +1,5 @@
 const winston = require('winston');
 const config = require('../config');
-const { ElevatorLog, QueryLog } = require('../models');
 const { EVENT_TYPES } = require('../utils/constants');
 
 class LoggingService {
@@ -8,6 +7,7 @@ class LoggingService {
     this.setupLogger();
     this.eventQueue = [];
     this.isProcessingQueue = false;
+    this.sqlLoggingEnabled = false; // Start with SQL logging disabled
   }
 
   setupLogger() {
@@ -70,6 +70,18 @@ class LoggingService {
     }
   }
 
+  // Enable SQL logging after initialization
+  enableSQLLogging() {
+    this.sqlLoggingEnabled = true;
+    this.logger.info('SQL logging enabled');
+  }
+
+  // Disable SQL logging
+  disableSQLLogging() {
+    this.sqlLoggingEnabled = false;
+    this.logger.info('SQL logging disabled');
+  }
+
   // Elevator event logging
   async logElevatorEvent(eventData) {
     try {
@@ -100,9 +112,18 @@ class LoggingService {
     }
   }
 
-  // SQL query logging
+  // SQL query logging - only enabled after initialization
   async logQuery(queryData) {
+    if (!this.sqlLoggingEnabled) {
+      return; // Don't log SQL queries during startup
+    }
+
     try {
+      // Don't log queries to query_logs table to prevent infinite loops
+      if (queryData.tableName === 'query_logs') {
+        return;
+      }
+
       // Add to queue for batch processing
       this.eventQueue.push({
         type: 'query',
@@ -138,8 +159,9 @@ class LoggingService {
       const elevatorEvents = batch.filter(event => event.type === 'elevator');
       const queryEvents = batch.filter(event => event.type === 'query');
 
-      // Process elevator events
+      // Process elevator events (import only when needed to avoid circular dependency)
       if (elevatorEvents.length > 0) {
+        const { ElevatorLog } = require('../models');
         await Promise.allSettled(
           elevatorEvents.map(event => 
             ElevatorLog.logEvent(event.data).catch(err => 
@@ -149,8 +171,9 @@ class LoggingService {
         );
       }
 
-      // Process query events
-      if (queryEvents.length > 0) {
+      // Process query events only if SQL logging is enabled
+      if (queryEvents.length > 0 && this.sqlLoggingEnabled) {
+        const { QueryLog } = require('../models');
         await Promise.allSettled(
           queryEvents.map(event => 
             QueryLog.logQuery(event.data).catch(err => 
@@ -268,6 +291,7 @@ class LoggingService {
 
     try {
       if (type === 'elevator' || type === 'all') {
+        const { ElevatorLog } = require('../models');
         const elevatorLogs = await ElevatorLog.getRecentActivity(minutes);
         
         let filtered = elevatorLogs;
@@ -278,7 +302,8 @@ class LoggingService {
         return filtered.slice(0, limit);
       }
 
-      if (type === 'query') {
+      if (type === 'query' && this.sqlLoggingEnabled) {
+        const { QueryLog } = require('../models');
         const since = new Date(Date.now() - (minutes * 60 * 1000));
         return await QueryLog.findAll({
           where: {
@@ -303,16 +328,20 @@ class LoggingService {
     const { startDate, endDate, elevatorId } = options;
 
     try {
-      const [elevatorAnalytics, queryAnalytics] = await Promise.all([
-        ElevatorLog.getAnalytics({ startDate, endDate, elevatorId }),
-        QueryLog.getQueryStatsByType({ startDate, endDate })
-      ]);
+      const { ElevatorLog, QueryLog } = require('../models');
+      
+      const elevatorAnalytics = await ElevatorLog.getAnalytics({ startDate, endDate, elevatorId });
+      
+      let queryAnalytics = [];
+      if (this.sqlLoggingEnabled) {
+        queryAnalytics = await QueryLog.getQueryStatsByType({ startDate, endDate });
+      }
 
       return {
         elevator: elevatorAnalytics,
         database: {
           queryStats: queryAnalytics,
-          totalQueries: queryAnalytics.reduce((sum, stat) => sum + parseInt(stat.dataValues.count), 0)
+          totalQueries: queryAnalytics.reduce((sum, stat) => sum + parseInt(stat.dataValues?.count || 0), 0)
         },
         period: {
           startDate: startDate || 'All time',
@@ -330,22 +359,26 @@ class LoggingService {
     try {
       const cutoffDate = new Date(Date.now() - (retentionDays * 24 * 60 * 60 * 1000));
       
-      const [elevatorDeleted, queryDeleted] = await Promise.all([
-        ElevatorLog.destroy({
-          where: {
-            timestamp: {
-              [ElevatorLog.sequelize.Sequelize.Op.lte]: cutoffDate
-            }
+      const { ElevatorLog, QueryLog } = require('../models');
+      
+      const elevatorDeleted = await ElevatorLog.destroy({
+        where: {
+          timestamp: {
+            [ElevatorLog.sequelize.Sequelize.Op.lte]: cutoffDate
           }
-        }),
-        QueryLog.destroy({
+        }
+      });
+
+      let queryDeleted = 0;
+      if (this.sqlLoggingEnabled) {
+        queryDeleted = await QueryLog.destroy({
           where: {
             timestamp: {
               [QueryLog.sequelize.Sequelize.Op.lte]: cutoffDate
             }
           }
-        })
-      ]);
+        });
+      }
 
       this.logger.info('Log cleanup completed', {
         elevatorLogsDeleted: elevatorDeleted,
@@ -364,6 +397,9 @@ class LoggingService {
   // Graceful shutdown
   async shutdown() {
     this.logger.info('Shutting down logging service...');
+    
+    // Disable SQL logging first
+    this.disableSQLLogging();
     
     // Process remaining events
     await this.processEventQueue();
