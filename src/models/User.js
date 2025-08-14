@@ -99,14 +99,14 @@ User.prototype.isLocked = function() {
 User.prototype.incrementLoginAttempts = async function() {
   const maxAttempts = 5;
   const lockTime = 30 * 60 * 1000; // 30 minutes
-
+  
   if (this.lockedUntil && this.lockedUntil.getTime() < Date.now()) {
     return this.update({
       loginAttempts: 1,
       lockedUntil: null
     });
   }
-
+  
   const updates = { loginAttempts: this.loginAttempts + 1 };
   
   if (this.loginAttempts + 1 >= maxAttempts && !this.isLocked()) {
@@ -122,6 +122,10 @@ User.prototype.resetLoginAttempts = async function() {
     lockedUntil: null,
     lastLogin: new Date()
   });
+};
+
+User.prototype.validatePassword = async function(password) {
+  return await bcrypt.compare(password, this.password);
 };
 
 // Class methods
@@ -142,17 +146,17 @@ User.findByCredentials = async function(identifier, password) {
       isActive: true
     }
   });
-
+  
   if (!user || user.isLocked()) {
     return null;
   }
-
+  
   const isValid = await user.validatePassword(password);
   if (!isValid) {
     await user.incrementLoginAttempts();
     return null;
   }
-
+  
   await user.resetLoginAttempts();
   return user;
 };
