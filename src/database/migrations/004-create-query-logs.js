@@ -86,18 +86,44 @@ module.exports = {
       }
     });
 
+    // Helper function to check if index exists
+    const indexExists = async (tableName, indexName) => {
+      try {
+        const [results] = await queryInterface.sequelize.query(
+          `SHOW INDEX FROM ${tableName} WHERE Key_name = '${indexName}'`
+        );
+        return results.length > 0;
+      } catch (error) {
+        return false;
+      }
+    };
+
     // Create indexes for performance
-    await queryInterface.addIndex('query_logs', ['timestamp']);
-    await queryInterface.addIndex('query_logs', ['query_type']);
-    await queryInterface.addIndex('query_logs', ['table_name']);
-    await queryInterface.addIndex('query_logs', ['user_id']);
-    await queryInterface.addIndex('query_logs', ['endpoint']);
-    await queryInterface.addIndex('query_logs', ['status']);
-    await queryInterface.addIndex('query_logs', ['execution_time']);
-    await queryInterface.addIndex('query_logs', ['request_id']);
-    await queryInterface.addIndex('query_logs', ['session_id']);
-    await queryInterface.addIndex('query_logs', ['timestamp', 'query_type']);
-    await queryInterface.addIndex('query_logs', ['user_id', 'timestamp']);
+    const indexes = [
+      { name: 'query_logs_timestamp', columns: ['timestamp'] },
+      { name: 'query_logs_query_type', columns: ['query_type'] },
+      { name: 'query_logs_table_name', columns: ['table_name'] },
+      { name: 'query_logs_user_id', columns: ['user_id'] },
+      { name: 'query_logs_endpoint', columns: ['endpoint'] },
+      { name: 'query_logs_status', columns: ['status'] },
+      { name: 'query_logs_execution_time', columns: ['execution_time'] },
+      { name: 'query_logs_request_id', columns: ['request_id'] },
+      { name: 'query_logs_session_id', columns: ['session_id'] },
+      { name: 'query_logs_timestamp_query_type', columns: ['timestamp', 'query_type'] },
+      { name: 'query_logs_user_id_timestamp', columns: ['user_id', 'timestamp'] }
+    ];
+
+    try {
+      for (const index of indexes) {
+        if (!(await indexExists('query_logs', index.name))) {
+          await queryInterface.addIndex('query_logs', index.columns, {
+            name: index.name
+          });
+        }
+      }
+    } catch (error) {
+      console.log('Index creation error (might already exist):', error.message);
+    }
   },
 
   async down(queryInterface, Sequelize) {

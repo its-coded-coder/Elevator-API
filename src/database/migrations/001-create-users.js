@@ -1,5 +1,4 @@
 'use strict';
-
 module.exports = {
   async up(queryInterface, Sequelize) {
     await queryInterface.createTable('users', {
@@ -53,13 +52,37 @@ module.exports = {
       }
     });
 
-    // Note: Unique indexes for username and email are automatically created 
-    // by the UNIQUE constraints in the table definition above
-    // Add non-unique indexes only
-    await queryInterface.addIndex('users', ['role']);
-    await queryInterface.addIndex('users', ['is_active']);
-  },
+    // Helper function to check if index exists
+    const indexExists = async (tableName, indexName) => {
+      try {
+        const [results] = await queryInterface.sequelize.query(
+          `SHOW INDEX FROM ${tableName} WHERE Key_name = '${indexName}'`
+        );
+        return results.length > 0;
+      } catch (error) {
+        return false;
+      }
+    };
 
+    // Add indexes only if they don't exist
+    try {
+      if (!(await indexExists('users', 'users_role'))) {
+        await queryInterface.addIndex('users', ['role'], {
+          name: 'users_role'
+        });
+      }
+      
+      if (!(await indexExists('users', 'users_is_active'))) {
+        await queryInterface.addIndex('users', ['is_active'], {
+          name: 'users_is_active'
+        });
+      }
+    } catch (error) {
+      console.log('Index creation error (might already exist):', error.message);
+      // Continue execution even if index creation fails
+    }
+  },
+  
   async down(queryInterface, Sequelize) {
     await queryInterface.dropTable('users');
   }

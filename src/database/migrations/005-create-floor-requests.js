@@ -82,16 +82,42 @@ module.exports = {
       }
     });
 
+    // Helper function to check if index exists
+    const indexExists = async (tableName, indexName) => {
+      try {
+        const [results] = await queryInterface.sequelize.query(
+          `SHOW INDEX FROM ${tableName} WHERE Key_name = '${indexName}'`
+        );
+        return results.length > 0;
+      } catch (error) {
+        return false;
+      }
+    };
+
     // Create indexes
-    await queryInterface.addIndex('floor_requests', ['floor']);
-    await queryInterface.addIndex('floor_requests', ['direction']);
-    await queryInterface.addIndex('floor_requests', ['elevator_id']);
-    await queryInterface.addIndex('floor_requests', ['user_id']);
-    await queryInterface.addIndex('floor_requests', ['status']);
-    await queryInterface.addIndex('floor_requests', ['requested_at']);
-    await queryInterface.addIndex('floor_requests', ['priority']);
-    await queryInterface.addIndex('floor_requests', ['floor', 'status']);
-    await queryInterface.addIndex('floor_requests', ['elevator_id', 'status']);
+    const indexes = [
+      { name: 'floor_requests_floor', columns: ['floor'] },
+      { name: 'floor_requests_direction', columns: ['direction'] },
+      { name: 'floor_requests_elevator_id', columns: ['elevator_id'] },
+      { name: 'floor_requests_user_id', columns: ['user_id'] },
+      { name: 'floor_requests_status', columns: ['status'] },
+      { name: 'floor_requests_requested_at', columns: ['requested_at'] },
+      { name: 'floor_requests_priority', columns: ['priority'] },
+      { name: 'floor_requests_floor_status', columns: ['floor', 'status'] },
+      { name: 'floor_requests_elevator_id_status', columns: ['elevator_id', 'status'] }
+    ];
+
+    try {
+      for (const index of indexes) {
+        if (!(await indexExists('floor_requests', index.name))) {
+          await queryInterface.addIndex('floor_requests', index.columns, {
+            name: index.name
+          });
+        }
+      }
+    } catch (error) {
+      console.log('Index creation error (might already exist):', error.message);
+    }
   },
 
   async down(queryInterface, Sequelize) {
