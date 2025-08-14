@@ -395,11 +395,32 @@ class ElevatorService {
         throw new Error('No available elevators');
       }
 
+      // Get elevator details from active elevators or database
+      let elevator = this.activeElevators.get(elevatorId);
+      let elevatorNumber = elevator?.number;
+
+      // If elevator not in active map, get from database
+      if (!elevator || !elevatorNumber) {
+        const dbElevator = await Elevator.findByPk(elevatorId);
+        if (dbElevator) {
+          elevatorNumber = dbElevator.elevatorNumber;
+          
+          // If not in active map, initialize it
+          if (!elevator) {
+            await this.initializeElevator(dbElevator);
+            elevator = this.activeElevators.get(elevatorId);
+          }
+        }
+      }
+
+      if (!elevatorNumber) {
+        throw new Error('Unable to determine elevator number');
+      }
+
       // Assign request to elevator
       await request.assign(elevatorId);
 
       // Add to elevator queue
-      const elevator = this.activeElevators.get(elevatorId);
       if (elevator) {
         elevator.queue.push({
           id: request.id,
@@ -418,10 +439,10 @@ class ElevatorService {
         });
       }
 
-      // Log the call
+      // Log the call - Ensure elevatorNumber is provided
       await loggingService.logElevatorCall(
         elevatorId,
-        elevator?.number,
+        elevatorNumber,
         fromFloor,
         userId,
         { direction, destinationFloor: toFloor }
@@ -430,7 +451,7 @@ class ElevatorService {
       loggingService.logger.info('Elevator called successfully', {
         requestId: request.id,
         elevatorId,
-        elevatorNumber: elevator?.number,
+        elevatorNumber,
         fromFloor,
         toFloor,
         direction,
@@ -440,7 +461,7 @@ class ElevatorService {
       return {
         requestId: request.id,
         elevatorId,
-        elevatorNumber: elevator?.number,
+        elevatorNumber,
         estimatedArrival: this.calculateEstimatedArrival(elevator, fromFloor),
         status: 'assigned'
       };
@@ -649,30 +670,36 @@ class ElevatorService {
 
   // Set elevator to maintenance mode
   async setMaintenance(elevatorId, reason) {
-    const elevator = this.activeElevators.get(elevatorId);
-    if (!elevator) {
-      throw new Error('Elevator not found');
-    }
-
-    elevator.state = ELEVATOR_STATES.MAINTENANCE;
-    elevator.isActive = false;
-    
-    // Cancel all queued requests for this elevator
-    elevator.queue = [];
-
-    await this.updateElevatorInDatabase(elevator);
-    
-    // Update database maintenance info
-    await Elevator.findByPk(elevatorId)?.setMaintenance();
-
-    this.broadcastElevatorUpdate(elevator);
-
-    loggingService.logger.info('Elevator set to maintenance mode', {
-      elevatorId,
-      elevatorNumber: elevator.number,
-      reason
-    });
+  const elevator = this.activeElevators.get(elevatorId);
+  if (!elevator) {
+    throw new Error('Elevator not found');
   }
+
+  elevator.state = ELEVATOR_STATES.MAINTENANCE;
+  elevator.isActive = false;
+  
+  // Cancel all queued requests for this elevator
+  elevator.queue = [];
+
+  await this.updateElevatorInDatabase(elevator);
+  
+  await Elevator.update({
+    state: ELEVATOR_STATES.MAINTENANCE,
+    isActive: false,
+    maintenanceReason: reason,
+    maintenanceStartTime: new Date()
+  }, {
+    where: { id: elevatorId }
+  });
+
+  this.broadcastElevatorUpdate(elevator);
+
+  loggingService.logger.info('Elevator set to maintenance mode', {
+    elevatorId,
+    elevatorNumber: elevator.number,
+    reason
+  });
+}
 
   // Graceful shutdown
   async shutdown() {

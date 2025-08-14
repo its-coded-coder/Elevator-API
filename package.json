@@ -57,15 +57,6 @@
     "husky": "^8.0.3",
     "lint-staged": "^15.0.2"
   },
-  "jest": {
-    "testEnvironment": "node",
-    "coverageDirectory": "coverage",
-    "collectCoverageFrom": [
-      "src/**/*.js",
-      "!src/database/migrations/**",
-      "!src/config/**"
-    ]
-  },
   "lint-staged": {
     "*.js": [
       "eslint --fix",
