@@ -122,6 +122,19 @@ const ElevatorLog = sequelize.define(TABLES.ELEVATOR_LOGS, {
 
 // Static methods for logging events
 ElevatorLog.logEvent = async function(data, transaction = null) {
+  if (!data.elevatorId) {
+    throw new Error('elevatorId is required for elevator logs');
+  }
+  
+  if (!data.elevatorNumber) {
+    throw new Error('elevatorNumber is required for elevator logs');
+  }
+
+  const userEvents = ['USER_LOGIN', 'USER_LOGOUT'];
+  if (userEvents.includes(data.eventType)) {
+    throw new Error(`Event type ${data.eventType} should not be logged as elevator event`);
+  }
+
   const logData = {
     elevatorId: data.elevatorId,
     elevatorNumber: data.elevatorNumber,
@@ -143,6 +156,10 @@ ElevatorLog.logEvent = async function(data, transaction = null) {
 };
 
 ElevatorLog.logCall = async function(elevatorId, elevatorNumber, floor, userId, metadata = {}) {
+  if (!elevatorId || !elevatorNumber) {
+    throw new Error('elevatorId and elevatorNumber are required');
+  }
+
   return this.logEvent({
     elevatorId,
     elevatorNumber,
@@ -157,6 +174,10 @@ ElevatorLog.logCall = async function(elevatorId, elevatorNumber, floor, userId, 
 };
 
 ElevatorLog.logArrival = async function(elevatorId, elevatorNumber, floor, fromFloor, duration) {
+  if (!elevatorId || !elevatorNumber) {
+    throw new Error('elevatorId and elevatorNumber are required');
+  }
+
   return this.logEvent({
     elevatorId,
     elevatorNumber,
@@ -172,6 +193,10 @@ ElevatorLog.logArrival = async function(elevatorId, elevatorNumber, floor, fromF
 };
 
 ElevatorLog.logDeparture = async function(elevatorId, elevatorNumber, floor, toFloor) {
+  if (!elevatorId || !elevatorNumber) {
+    throw new Error('elevatorId and elevatorNumber are required');
+  }
+
   return this.logEvent({
     elevatorId,
     elevatorNumber,
@@ -182,6 +207,10 @@ ElevatorLog.logDeparture = async function(elevatorId, elevatorNumber, floor, toF
 };
 
 ElevatorLog.logDoorOperation = async function(elevatorId, elevatorNumber, floor, isOpening, duration) {
+  if (!elevatorId || !elevatorNumber) {
+    throw new Error('elevatorId and elevatorNumber are required');
+  }
+
   return this.logEvent({
     elevatorId,
     elevatorNumber,
@@ -215,7 +244,8 @@ ElevatorLog.getByElevator = function(elevatorId, options = {}) {
     include: [
       {
         model: sequelize.models[TABLES.ELEVATORS],
-        attributes: ['elevatorNumber']
+        attributes: ['elevatorNumber'],
+        required: false
       },
       {
         model: sequelize.models[TABLES.USERS],

@@ -6,7 +6,9 @@ class LoggingService {
   constructor() {
     this.setupLogger();
     this.eventQueue = [];
+    this.userEventQueue = []; // Separate queue for user events
     this.isProcessingQueue = false;
+    this.isProcessingUserQueue = false;
     this.sqlLoggingEnabled = false; // Start with SQL logging disabled
   }
 
@@ -85,6 +87,12 @@ class LoggingService {
   // Elevator event logging
   async logElevatorEvent(eventData) {
     try {
+      // Validate that this is actually an elevator event
+      if (!eventData.elevatorId && !['USER_LOGIN', 'USER_LOGOUT'].includes(eventData.eventType)) {
+        this.logger.warn('Elevator event missing elevatorId', { eventData });
+        return;
+      }
+
       // Add to queue for batch processing
       this.eventQueue.push({
         type: 'elevator',
@@ -99,16 +107,47 @@ class LoggingService {
         await this.processEventQueue();
       }
 
-      // Log to winston as well
-      this.logger.info('Elevator Event', {
-        elevatorId: eventData.elevatorId,
-        eventType: eventData.eventType,
-        floor: eventData.floor,
-        userId: eventData.userId
-      });
+      // Log to winston as well (only if it has elevator context)
+      if (eventData.elevatorId) {
+        this.logger.info('Elevator Event', {
+          elevatorId: eventData.elevatorId,
+          eventType: eventData.eventType,
+          floor: eventData.floor,
+          userId: eventData.userId
+        });
+      }
 
     } catch (error) {
       this.logger.error('Failed to log elevator event', { error: error.message, eventData });
+    }
+  }
+
+  // User authentication logging - separate from elevator events
+  async logUserEvent(eventData) {
+    try {
+      // Add to separate user event queue
+      this.userEventQueue.push({
+        type: 'user',
+        data: {
+          ...eventData,
+          timestamp: new Date()
+        }
+      });
+
+      // Process user queue if not already processing
+      if (!this.isProcessingUserQueue) {
+        await this.processUserEventQueue();
+      }
+
+      // Log to winston as well
+      this.logger.info('User Event', {
+        eventType: eventData.eventType,
+        userId: eventData.userId,
+        username: eventData.metadata?.username
+      });
+
+    } catch (error) {
+      this.logger.error('Failed to log user event', { error: error.message, eventData });
     }
   }
 
@@ -143,7 +182,7 @@ class LoggingService {
     }
   }
 
-  // Process event queue in batches
+  // Process elevator and query event queue in batches
   async processEventQueue() {
     if (this.isProcessingQueue || this.eventQueue.length === 0) {
       return;
@@ -159,15 +198,22 @@ class LoggingService {
       const elevatorEvents = batch.filter(event => event.type === 'elevator');
       const queryEvents = batch.filter(event => event.type === 'query');
 
-      // Process elevator events (import only when needed to avoid circular dependency)
+      // Process elevator events
       if (elevatorEvents.length > 0) {
         const { ElevatorLog } = require('../models');
         await Promise.allSettled(
-          elevatorEvents.map(event => 
-            ElevatorLog.logEvent(event.data).catch(err => 
-              this.logger.error('Failed to save elevator log', err)
-            )
-          )
+          elevatorEvents.map(event => {
+            // Only log events that have elevator context
+            if (event.data.elevatorId && event.data.elevatorNumber) {
+              return ElevatorLog.logEvent(event.data);
+            } else {
+              this.logger.warn('Skipping elevator log - missing elevator context', { 
+                eventType: event.data.eventType,
+                elevatorId: event.data.elevatorId 
+              });
+              return Promise.resolve();
+            }
+          }).filter(promise => promise)
         );
       }
 
@@ -195,8 +241,53 @@ class LoggingService {
     }
   }
 
+  // Process user event queue separately
+  async processUserEventQueue() {
+    if (this.isProcessingUserQueue || this.userEventQueue.length === 0) {
+      return;
+    }
+
+    this.isProcessingUserQueue = true;
+
+    try {
+      const batchSize = 50;
+      const batch = this.userEventQueue.splice(0, batchSize);
+
+      // For now, we'll just log user events to winston
+      // You could create a separate UserLog model if needed
+      for (const event of batch) {
+        this.logger.info('User Authentication Event', {
+          eventType: event.data.eventType,
+          userId: event.data.userId,
+          username: event.data.metadata?.username,
+          action: event.data.metadata?.action,
+          ipAddress: event.data.ipAddress,
+          timestamp: event.data.timestamp
+        });
+      }
+
+    } catch (error) {
+      this.logger.error('Error processing user event queue', { error: error.message });
+    } finally {
+      this.isProcessingUserQueue = false;
+
+      // Process remaining events if any
+      if (this.userEventQueue.length > 0) {
+        setTimeout(() => this.processUserEventQueue(), 100);
+      }
+    }
+  }
+
   // Convenience methods for specific events
   async logElevatorCall(elevatorId, elevatorNumber, floor, userId, metadata = {}) {
+    // Ensure elevatorNumber is provided
+    if (!elevatorNumber) {
+      this.logger.warn('Elevator call log missing elevatorNumber', {
+        elevatorId, floor, userId
+      });
+      return;
+    }
+
     return this.logElevatorEvent({
       elevatorId,
       elevatorNumber,
@@ -208,6 +299,14 @@ class LoggingService {
   }
 
   async logElevatorArrival(elevatorId, elevatorNumber, floor, fromFloor, duration = null) {
+    // Ensure elevatorNumber is provided
+    if (!elevatorNumber) {
+      this.logger.warn('Elevator arrival log missing elevatorNumber', {
+        elevatorId, floor, fromFloor
+      });
+      return;
+    }
+
     return this.logElevatorEvent({
       elevatorId,
       elevatorNumber,
@@ -223,6 +322,14 @@ class LoggingService {
   }
 
   async logElevatorDeparture(elevatorId, elevatorNumber, floor, toFloor) {
+    // Ensure elevatorNumber is provided
+    if (!elevatorNumber) {
+      this.logger.warn('Elevator departure log missing elevatorNumber', {
+        elevatorId, floor, toFloor
+      });
+      return;
+    }
+
     return this.logElevatorEvent({
       elevatorId,
       elevatorNumber,
@@ -233,6 +340,14 @@ class LoggingService {
   }
 
   async logDoorOperation(elevatorId, elevatorNumber, floor, isOpening, duration = null) {
+    // Ensure elevatorNumber is provided
+    if (!elevatorNumber) {
+      this.logger.warn('Door operation log missing elevatorNumber', {
+        elevatorId, floor, isOpening
+      });
+      return;
+    }
+
     return this.logElevatorEvent({
       elevatorId,
       elevatorNumber,
@@ -258,14 +373,20 @@ class LoggingService {
       }
     };
 
-    await this.logElevatorEvent(errorData);
+    // Only log to elevator events if we have elevator context
+    if (metadata.elevatorId && metadata.elevatorNumber) {
+      await this.logElevatorEvent(errorData);
+    }
+    
     this.logger.error(message, { error: error.message, stack: error.stack, ...metadata });
   }
 
+  // Use separate user event logging for authentication
   async logUserAuth(userId, username, action, ipAddress, userAgent) {
     const eventType = action === 'login' ? EVENT_TYPES.USER_LOGIN : EVENT_TYPES.USER_LOGOUT;
     
-    return this.logElevatorEvent({
+    // Use separate user event logging instead of elevator event logging
+    return this.logUserEvent({
       userId,
       eventType,
       metadata: {
@@ -403,6 +524,7 @@ class LoggingService {
     
     // Process remaining events
     await this.processEventQueue();
+    await this.processUserEventQueue();
     
     // Wait a bit for any pending operations
     await new Promise(resolve => setTimeout(resolve, 1000));

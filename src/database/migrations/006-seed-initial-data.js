@@ -47,14 +47,15 @@ module.exports = {
     ]);
 
     // Create elevators based on configuration
-    const elevatorCount = config.elevator.count;
+    const elevatorCount = Math.max(config.elevator?.count || 3, 1);
     const elevators = [];
     
     for (let i = 1; i <= elevatorCount; i++) {
       elevators.push({
         id: uuidv4(),
-        elevator_number: i,
+        elevator_number: i, 
         current_floor: 1,
+        target_floor: null, 
         state: 'IDLE',
         direction: 'NONE',
         door_state: 'CLOSED',
@@ -70,15 +71,16 @@ module.exports = {
 
     await queryInterface.bulkInsert('elevators', elevators);
 
-    console.log(`✅ Seeded database with ${elevatorCount} elevators and 3 default users`);
+    console.log(`Seeded database with ${elevatorCount} elevators and 3 default users`);
     console.log('Default users created:');
     console.log('  - admin/admin123 (ADMIN role)');
     console.log('  - operator/operator123 (OPERATOR role)');
     console.log('  - viewer/viewer123 (VIEWER role)');
+    console.log(`Elevators created: ${elevatorCount} (numbered 1-${elevatorCount})`);
   },
 
   async down(queryInterface, Sequelize) {
-    // Remove seeded data
+    // Remove seeded data in reverse order to handle foreign key constraints
     await queryInterface.bulkDelete('floor_requests', null, {});
     await queryInterface.bulkDelete('elevator_logs', null, {});
     await queryInterface.bulkDelete('query_logs', null, {});

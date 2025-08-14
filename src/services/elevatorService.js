@@ -395,11 +395,32 @@ class ElevatorService {
         throw new Error('No available elevators');
       }
 
+      // Get elevator details from active elevators or database
+      let elevator = this.activeElevators.get(elevatorId);
+      let elevatorNumber = elevator?.number;
+
+      // If elevator not in active map, get from database
+      if (!elevator || !elevatorNumber) {
+        const dbElevator = await Elevator.findByPk(elevatorId);
+        if (dbElevator) {
+          elevatorNumber = dbElevator.elevatorNumber;
+          
+          // If not in active map, initialize it
+          if (!elevator) {
+            await this.initializeElevator(dbElevator);
+            elevator = this.activeElevators.get(elevatorId);
+          }
+        }
+      }
+
+      if (!elevatorNumber) {
+        throw new Error('Unable to determine elevator number');
+      }
+
       // Assign request to elevator
       await request.assign(elevatorId);
 
       // Add to elevator queue
-      const elevator = this.activeElevators.get(elevatorId);
       if (elevator) {
         elevator.queue.push({
           id: request.id,
@@ -418,10 +439,10 @@ class ElevatorService {
         });
       }
 
-      // Log the call
+      // Log the call - Ensure elevatorNumber is provided
       await loggingService.logElevatorCall(
         elevatorId,
-        elevator?.number,
+        elevatorNumber,
         fromFloor,
         userId,
         { direction, destinationFloor: toFloor }
@@ -430,7 +451,7 @@ class ElevatorService {
       loggingService.logger.info('Elevator called successfully', {
         requestId: request.id,
         elevatorId,
-        elevatorNumber: elevator?.number,
+        elevatorNumber,
         fromFloor,
         toFloor,
         direction,
@@ -440,7 +461,7 @@ class ElevatorService {
       return {
         requestId: request.id,
         elevatorId,
-        elevatorNumber: elevator?.number,
+        elevatorNumber,
         estimatedArrival: this.calculateEstimatedArrival(elevator, fromFloor),
         status: 'assigned'
       };

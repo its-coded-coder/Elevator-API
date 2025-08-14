@@ -443,9 +443,25 @@ class SchedulingService {
       });
 
       const totalRequests = requests.length;
-      const avgWaitTime = requests.reduce((sum, req) => sum + (req.waitTime || 0), 0) / totalRequests;
-      const maxWaitTime = Math.max(...requests.map(req => req.waitTime || 0));
-      const minWaitTime = Math.min(...requests.map(req => req.waitTime || 0));
+      
+      // Handle empty dataset properly
+      if (totalRequests === 0) {
+        return {
+          algorithm: this.algorithm,
+          period: '24h',
+          totalRequests: 0,
+          avgWaitTime: 0,
+          maxWaitTime: 0,
+          minWaitTime: 0,
+          efficiency: 0
+        };
+      }
+
+      // Only calculate stats when we have data
+      const waitTimes = requests.map(req => req.waitTime || 0);
+      const avgWaitTime = waitTimes.reduce((sum, time) => sum + time, 0) / totalRequests;
+      const maxWaitTime = Math.max(...waitTimes);
+      const minWaitTime = Math.min(...waitTimes);
 
       return {
         algorithm: this.algorithm,

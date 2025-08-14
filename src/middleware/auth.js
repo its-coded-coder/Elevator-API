@@ -200,7 +200,12 @@ const createRateLimit = (options = {}) => {
         userAgent: req.get('User-Agent')
       });
 
-      res.status(HTTP_STATUS.TOO_MANY_REQUESTS).json(defaultOptions.message);
+      // FIX: Explicitly set status code before sending response
+      return res.status(HTTP_STATUS.TOO_MANY_REQUESTS).json({
+        success: false,
+        error: 'Too many requests',
+        message: 'Rate limit exceeded. Please try again later.'
+      });
     }
   };
 
@@ -218,6 +223,20 @@ const elevatorCallRateLimit = createRateLimit({
   keyGenerator: (req) => {
     // Rate limit per user if authenticated, otherwise per IP
     return req.user ? req.user.id : req.ip;
+  },
+  handler: (req, res) => {
+    loggingService.logger.warn('Rate limit exceeded', {
+      ip: req.ip,
+      endpoint: req.originalUrl,
+      userId: req.user?.id
+    });
+
+    // FIX: Explicitly set status code for elevator call rate limiting
+    return res.status(HTTP_STATUS.TOO_MANY_REQUESTS).json({
+      success: false,
+      error: 'Too many elevator calls',
+      message: 'You are calling elevators too frequently. Please wait before trying again.'
+    });
   }
 });
 
