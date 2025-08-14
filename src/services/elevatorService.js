@@ -670,30 +670,36 @@ class ElevatorService {
 
   // Set elevator to maintenance mode
   async setMaintenance(elevatorId, reason) {
-    const elevator = this.activeElevators.get(elevatorId);
-    if (!elevator) {
-      throw new Error('Elevator not found');
-    }
-
-    elevator.state = ELEVATOR_STATES.MAINTENANCE;
-    elevator.isActive = false;
-    
-    // Cancel all queued requests for this elevator
-    elevator.queue = [];
-
-    await this.updateElevatorInDatabase(elevator);
-    
-    // Update database maintenance info
-    await Elevator.findByPk(elevatorId)?.setMaintenance();
-
-    this.broadcastElevatorUpdate(elevator);
-
-    loggingService.logger.info('Elevator set to maintenance mode', {
-      elevatorId,
-      elevatorNumber: elevator.number,
-      reason
-    });
+  const elevator = this.activeElevators.get(elevatorId);
+  if (!elevator) {
+    throw new Error('Elevator not found');
   }
+
+  elevator.state = ELEVATOR_STATES.MAINTENANCE;
+  elevator.isActive = false;
+  
+  // Cancel all queued requests for this elevator
+  elevator.queue = [];
+
+  await this.updateElevatorInDatabase(elevator);
+  
+  await Elevator.update({
+    state: ELEVATOR_STATES.MAINTENANCE,
+    isActive: false,
+    maintenanceReason: reason,
+    maintenanceStartTime: new Date()
+  }, {
+    where: { id: elevatorId }
+  });
+
+  this.broadcastElevatorUpdate(elevator);
+
+  loggingService.logger.info('Elevator set to maintenance mode', {
+    elevatorId,
+    elevatorNumber: elevator.number,
+    reason
+  });
+}
 
   // Graceful shutdown
   async shutdown() {
