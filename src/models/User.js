@@ -91,19 +91,16 @@ const User = sequelize.define(TABLES.USERS, {
 });
 
 // Instance methods
-User.prototype.validatePassword = async function(password) {
-  return bcrypt.compare(password, this.password);
-};
-
 User.prototype.isLocked = function() {
-  return !!(this.lockedUntil && this.lockedUntil > Date.now());
+  // Convert both to same type for proper comparison
+  return !!(this.lockedUntil && this.lockedUntil.getTime() > Date.now());
 };
 
 User.prototype.incrementLoginAttempts = async function() {
   const maxAttempts = 5;
   const lockTime = 30 * 60 * 1000; // 30 minutes
 
-  if (this.lockedUntil && this.lockedUntil < Date.now()) {
+  if (this.lockedUntil && this.lockedUntil.getTime() < Date.now()) {
     return this.update({
       loginAttempts: 1,
       lockedUntil: null
